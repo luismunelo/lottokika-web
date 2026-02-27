@@ -621,58 +621,126 @@ def buscar_patrones_multiloterias(loteria_ref, fecha_ref, loterias_comparar, fec
 def generar_multi_pronosticos(loteria, fecha_referencia, fecha_inicio, fecha_fin):
     puntos = defaultdict(int)
     detalles = defaultdict(list)
+    puntos_patrones = defaultdict(int)
+    puntos_frecuencias = defaultdict(int)
 
-    # 1. Patrones históricos
+    # ── 1. Patrones Históricos ─────────────────────────────────────────────────
+    patrones_info = []
     res_pat = buscar_patrones_similares(loteria, fecha_referencia, fecha_inicio, fecha_fin, min_similitud=0)
     if 'error' not in res_pat:
-        ref = res_pat.get('resultados_referencia', {})
         horarios_ref = res_pat.get('horarios_referencia', [])
         for p in [x for x in res_pat.get('patrones_similares', []) if x['aciertos'] >= 2]:
             hist = obtener_resultados_dia(p['fecha'], loteria)
             if not hist:
                 continue
             hs_ord = ordenar_horarios(list(hist.keys()))
+            siguiente_horario = None
+            horario_anterior = None
             for i, h in enumerate(hs_ord):
                 if h not in horarios_ref:
-                    ani = hist[h]
-                    puntos[ani] += 10
-                    detalles[ani].append('Patrones Historicos: +10')
+                    siguiente_horario = h
+                    if i > 0:
+                        horario_anterior = hs_ord[i - 1]
                     break
+            if siguiente_horario and siguiente_horario in hist:
+                ani = hist[siguiente_horario]
+                puntos[ani] += 10
+                puntos_patrones[ani] += 10
+                detalles[ani].append('Patrones Históricos: +10')
+                patrones_info.append({
+                    'fecha_patron': p['fecha'],
+                    'animalito_futuro': ani,
+                    'horario_futuro': siguiente_horario,
+                    'horario_anterior': horario_anterior,
+                    'aciertos': p['aciertos'],
+                    'similitud': p['similitud']
+                })
 
-    # 2. Frecuencias
-    ultimo_ani = None
-    ref = obtener_resultados_dia(fecha_referencia, loteria)
-    if ref:
-        hs = ordenar_horarios(list(ref.keys()))
-        if hs:
-            ultimo_ani = ref[hs[-1]]
-    if ultimo_ani:
-        for tipo in ('despues', 'antes'):
-            res_f = analizar_frecuencias(loteria, fecha_inicio, fecha_fin, tipo)
-            if 'error' not in res_f:
-                top = res_f['frecuencias'].get(ultimo_ani, [])[:5]
-                for entry in top:
-                    ani = entry['animalito']
-                    puntos[ani] += 10
-                    detalles[ani].append(f'Frecuencias ({tipo}): +10')
+    # ── 2. Bonus Seguimiento ───────────────────────────────────────────────────
+    if patrones_info:
+        ref_dia = obtener_resultados_dia(fecha_referencia, loteria)
+        if ref_dia:
+            for pi in patrones_info:
+                h_ant = pi.get('horario_anterior')
+                if h_ant and h_ant in ref_dia:
+                    hist_pi = obtener_resultados_dia(pi['fecha_patron'], loteria)
+                    if hist_pi and h_ant in hist_pi:
+                        if hist_pi[h_ant] == ref_dia[h_ant]:
+                            puntos[pi['animalito_futuro']] += 3
+                            detalles[pi['animalito_futuro']].append('Bonus Seguimiento: +3')
 
-    # 3. Multiloterías
+    # ── 3. Multiloterías ──────────────────────────────────────────────────────
     otros = [l for l in loterias if l != loteria]
     res_ml = buscar_patrones_multiloterias(loteria, fecha_referencia, otros, fecha_inicio, fecha_fin, min_similitud=0)
     if 'error' not in res_ml:
         horarios_ref_norm = [normalizar_horario_ml(h) for h in res_ml.get('horarios_referencia', [])]
         for p in [x for x in res_ml.get('patrones_multiloterias', []) if x['aciertos'] >= 2]:
-            for rf in p['resultados_futuros'][:1]:
-                ani = rf['animalito']
-                puntos[ani] += 5
-                detalles[ani].append('Multiloterias: +5')
+            hist_cmp = obtener_resultados_dia(p['fecha_comparada'], p['loteria_comparada'])
+            if not hist_cmp:
+                continue
+            for hc in ordenar_horarios(list(hist_cmp.keys())):
+                if normalizar_horario_ml(hc) not in horarios_ref_norm:
+                    ani = hist_cmp[hc]
+                    puntos[ani] += 5
+                    detalles[ani].append('Multiloterías: +5')
+                    break
 
-    # 4. Bonus doble fuente
+    # ── 4. Frecuencias (top 5 + empates) ─────────────────────────────────────
+    ref_dia = obtener_resultados_dia(fecha_referencia, loteria)
+    ultimo_ani = None
+    if ref_dia:
+        hs = ordenar_horarios(list(ref_dia.keys()))
+        if hs:
+            ultimo_ani = ref_dia[hs[-1]]
+    if ultimo_ani:
+        for tipo in ('despues', 'antes'):
+            res_f = analizar_frecuencias(loteria, fecha_inicio, fecha_fin, tipo)
+            if 'error' not in res_f:
+                top_list = res_f['frecuencias'].get(ultimo_ani, [])
+                top5 = top_list[:5]
+                if len(top5) >= 5:
+                    frec_quinto = top5[4]['frecuencia']
+                    top_final = [e for e in top_list if e['frecuencia'] >= frec_quinto][:6]
+                else:
+                    top_final = top5
+                for entry in top_final:
+                    ani = entry['animalito']
+                    puntos[ani] += 10
+                    puntos_frecuencias[ani] += 10
+                    detalles[ani].append(f'Frecuencias ({tipo}): +10')
+
+    # ── 5. Coincidencias Consecutivas (pares exactos) ─────────────────────────
+    if ref_dia and len(ref_dia) >= 2:
+        hs_ref = ordenar_horarios(list(ref_dia.keys()))
+        pares = []
+        for i in range(len(hs_ref) - 1):
+            pares.append((ref_dia[hs_ref[i]], ref_dia[hs_ref[i+1]], hs_ref[i], hs_ref[i+1]))
+        rows_cmc = _fetchall(
+            "SELECT fecha, horario_sorteo, animalito_ganador FROM resultados "
+            "WHERE fecha_iso BETWEEN %s AND %s AND fecha != %s AND loteria=%s "
+            "ORDER BY fecha_iso, horario_sorteo",
+            (fecha_dd_mm_yyyy_a_iso(fecha_inicio), fecha_dd_mm_yyyy_a_iso(fecha_fin),
+             fecha_referencia, loteria)
+        )
+        if rows_cmc:
+            por_dia_cmc = defaultdict(list)
+            for r in rows_cmc:
+                por_dia_cmc[r['fecha']].append((r['horario_sorteo'], r['animalito_ganador']))
+            for a1, a2, h1_ref, h2_ref in pares:
+                for fecha_c, res_dia_c in por_dia_cmc.items():
+                    res_ord = sorted(res_dia_c, key=lambda x: convertir_horario_a_minutos(x[0]))
+                    for i in range(len(res_ord) - 1):
+                        if (res_ord[i][1] == a1 and res_ord[i+1][1] == a2
+                                and res_ord[i][0] == h1_ref and res_ord[i+1][0] == h2_ref):
+                            if i + 2 < len(res_ord):
+                                ani_sig = res_ord[i+2][1]
+                                puntos[ani_sig] += 10
+                                detalles[ani_sig].append('Coincidencias Consecutivas: +10')
+                            break
+
+    # ── 6. Bonus Doble Fuente (Patrones + Frecuencias) ────────────────────────
     for ani in list(puntos.keys()):
-        sources = [d for d in detalles[ani] if 'Patrones' in d or 'Frecuencias' in d]
-        has_pat = any('Patrones' in d for d in detalles[ani])
-        has_frec = any('Frecuencias' in d for d in detalles[ani])
-        if has_pat and has_frec:
+        if puntos_patrones.get(ani, 0) > 0 and puntos_frecuencias.get(ani, 0) > 0:
             puntos[ani] += 20
             detalles[ani].append('Bonus Doble Fuente: +20')
 
@@ -683,7 +751,8 @@ def generar_multi_pronosticos(loteria, fecha_referencia, fecha_inicio, fecha_fin
                 'numero': ani, 'animalito': animalitos[ani],
                 'puntuacion_total': pts,
                 'detalles': detalles[ani],
-                'fuentes': len(detalles[ani])
+                'fuentes': len(set(d.split(':')[0].strip() for d in detalles[ani]
+                                   if not d.startswith('Bonus')))
             })
     pronosticos.sort(key=lambda x: x['puntuacion_total'], reverse=True)
     return {
