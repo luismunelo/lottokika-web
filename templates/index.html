@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LottoKika - Análisis de Loterías</title>
+    <meta name="description"
+        content="Sistema de análisis de patrones históricos para loterías de animales de Venezuela">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+
+    <!-- ── SIDEBAR ─────────────────────────────────────── -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <span>🎰</span>
+            <span class="logo-text">LottoKika</span>
+        </div>
+        <nav style="flex:1;overflow-y:auto;padding:10px 0">
+            <div class="nav-item active" data-tab="resultados">
+                <span class="icon">📊</span>
+                <span class="nav-label">Resultados</span>
+            </div>
+            <div class="nav-item" data-tab="patrones">
+                <span class="icon">🔄</span>
+                <span class="nav-label">Patrones Históricos</span>
+            </div>
+            <div class="nav-item" data-tab="animales">
+                <span class="icon">🐾</span>
+                <span class="nav-label">Patrones Animales</span>
+            </div>
+            <div class="nav-item" data-tab="multiloterias">
+                <span class="icon">🔀</span>
+                <span class="nav-label">Multiloterías</span>
+            </div>
+            <div class="nav-item" data-tab="frecuencias">
+                <span class="icon">📈</span>
+                <span class="nav-label">Frecuencias</span>
+            </div>
+            <div class="nav-item" data-tab="multipronosticos">
+                <span class="icon">🎯</span>
+                <span class="nav-label">Multipronósticos</span>
+            </div>
+            <div class="nav-item" data-tab="coincidencias">
+                <span class="icon">🔍</span>
+                <span class="nav-label">Coincidencias</span>
+            </div>
+            <div class="nav-item" data-tab="configuracion">
+                <span class="icon">⚙️</span>
+                <span class="nav-label">Configuración</span>
+            </div>
+        </nav>
+        <div style="padding:16px;font-size:11px;color:var(--text-muted);border-top:1px solid var(--card-border)">
+            <div>Auto-Scraping</div>
+            <label class="toggle" style="margin-top:6px">
+                <input type="checkbox" id="toggleAutoScraping">
+                <span class="toggle-slider"></span>
+            </label>
+            <div style="margin-top:6px" id="lastUpdate">Nunca</div>
+        </div>
+    </aside>
+
+    <!-- ── MAIN ────────────────────────────────────────── -->
+    <main class="main">
+
+        <!-- ════════════ TAB: RESULTADOS ════════════ -->
+        <section class="tab-panel active" id="tab-resultados">
+            <div class="topbar">
+                <h1>📊 Resultados</h1>
+                <span class="badge" id="badgeCount">0 registros</span>
+            </div>
+            <div class="card">
+                <div class="controls-row">
+                    <div class="ctrl-group">
+                        <label>Inicio</label>
+                        <input type="date" id="r_fi" value="{{ now_minus_7.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group">
+                        <label>Fin</label>
+                        <input type="date" id="r_ff" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group">
+                        <label>Lotería</label>
+                        <select id="r_lot">
+                            <option value="TODAS">TODAS</option>
+                            {% for l in loterias %}<option>{{ l }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="ctrl-group">
+                        <label>Horario</label>
+                        <select id="r_hor">
+                            <option value="TODOS">TODOS</option>
+                            {% for h in horarios %}<option>{{ h }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="cargarResultados()">🔍 Buscar</button>
+                    <button class="btn btn-ghost" onclick="limpiarFiltrosResultados()">🗑️ Limpiar</button>
+                    <button class="btn btn-primary" onclick="showModal('modalScraping')">📥 Scraping</button>
+                    <button class="btn btn-success" onclick="exportarCSV()">💾 CSV</button>
+                </div>
+                <div class="table-wrap" style="max-height:70vh">
+                    <table id="tblResultados">
+                        <thead>
+                            <tr>
+                                <th>📅 Fecha</th>
+                                <th>🎰 Lotería</th>
+                                <th>⏰ Horario</th>
+                                <th>Cód</th>
+                                <th>🐾 Animalito</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bodyResultados"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════ TAB: PATRONES HISTÓRICOS ════════════ -->
+        <section class="tab-panel" id="tab-patrones">
+            <div class="topbar">
+                <h1>🔄 Patrones Históricos</h1>
+            </div>
+            <div class="card">
+                <div class="controls-row">
+                    <div class="ctrl-group"><label>Lotería</label>
+                        <select id="p_lot">{% for l in loterias %}<option>{{ l }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="ctrl-group"><label>Fecha Ref.</label>
+                        <input type="date" id="p_ref" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>Hist. Ini</label>
+                        <input type="date" id="p_fi" value="{{ now_minus_90.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>Hist. Fin</label>
+                        <input type="date" id="p_ff" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>% Min</label>
+                        <input type="number" id="p_sim" value="30" min="0" max="100" style="width:70px">
+                    </div>
+                    <div class="ctrl-group"><label>Top N</label>
+                        <input type="number" id="p_top" value="10" min="1" max="20" style="width:60px">
+                    </div>
+                    <button class="btn btn-primary" onclick="buscarPatrones()">🔍 Buscar</button>
+                    <button class="btn btn-success" onclick="pronosticarPatrones()">🎯 Pronosticar</button>
+                    <button class="btn btn-ghost btn-sm" onclick="cargarReferencia('p')">🔄</button>
+                </div>
+                <div class="flex-gap" style="padding:16px;gap:12px;flex-wrap:wrap">
+                    <!-- Referencia -->
+                    <div style="flex:0 0 220px">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Referencia</div>
+                        <div class="table-wrap" style="max-height:300px">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>⏰</th>
+                                        <th>Cód</th>
+                                        <th>🐾 Animal</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyPRef"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- Pronósticos -->
+                    <div style="flex:0 0 260px">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Pronósticos</div>
+                        <div class="table-wrap" style="max-height:300px">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Cód</th>
+                                        <th>🐾</th>
+                                        <th>Pts</th>
+                                        <th>Frec</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyPPron"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- Días similares -->
+                    <div style="flex:1;min-width:230px">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Días Similares</div>
+                        <div class="table-wrap" style="max-height:300px">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>📅 Fecha</th>
+                                        <th>%</th>
+                                        <th>✅</th>
+                                        <th>Tot</th>
+                                        <th>Fut</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyPDias" class="clickable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- Detalles -->
+                    <div style="flex:1;min-width:230px">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Detalles del Patrón</div>
+                        <div class="table-wrap" style="max-height:300px">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>⏰</th>
+                                        <th>Cód</th>
+                                        <th>🐾</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyPDet"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="status-bar" id="statusPatrones" style="margin:0 16px 16px">Listo.</div>
+            </div>
+        </section>
+
+        <!-- ════════════ TAB: PATRONES ANIMALES ════════════ -->
+        <section class="tab-panel" id="tab-animales">
+            <div class="topbar">
+                <h1>🐾 Patrones Animales</h1>
+            </div>
+            <div class="card">
+                <div class="controls-row">
+                    <div class="ctrl-group"><label>Lotería</label>
+                        <select id="a_lot">{% for l in loterias %}<option>{{ l }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="ctrl-group"><label>Fecha Ref.</label>
+                        <input type="date" id="a_ref" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>Hist. Ini</label>
+                        <input type="date" id="a_fi" value="{{ now_minus_90.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>Hist. Fin</label>
+                        <input type="date" id="a_ff" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>% Min</label>
+                        <input type="number" id="a_sim" value="30" min="0" max="100" style="width:70px">
+                    </div>
+                    <div class="ctrl-group"><label>Top N</label>
+                        <input type="number" id="a_top" value="10" min="1" max="20" style="width:60px">
+                    </div>
+                    <button class="btn btn-primary" onclick="buscarAnimales()">🔍 Buscar</button>
+                    <button class="btn btn-success" onclick="pronosticarAnimales()">🚀 Pronost+</button>
+                </div>
+                <div class="flex-gap" style="padding:16px;gap:12px;flex-wrap:wrap">
+                    <div style="flex:0 0 220px">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Referencia</div>
+                        <div class="table-wrap" style="max-height:300px">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>⏰</th>
+                                        <th>Cód</th>
+                                        <th>🐾</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyARef"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div style="flex:0 0 280px">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Pronósticos+</div>
+                        <div class="table-wrap" style="max-height:300px">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Cód</th>
+                                        <th>🐾</th>
+                                        <th>Pts</th>
+                                        <th>Fec</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyAPron"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div style="flex:1;min-width:230px">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Días con Patrones</div>
+                        <div class="table-wrap" style="max-height:300px">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>📅</th>
+                                        <th>✅</th>
+                                        <th>%</th>
+                                        <th>🐾R</th>
+                                        <th>🐾H</th>
+                                        <th>Fut</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyADias" class="clickable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div style="flex:1;min-width:230px">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Detalle del Patrón</div>
+                        <div class="table-wrap" style="max-height:300px">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>⏰</th>
+                                        <th>Cód</th>
+                                        <th>🐾</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyADet"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="status-bar" id="statusAnimales" style="margin:0 16px 16px">Listo.</div>
+            </div>
+        </section>
+
+        <!-- ════════════ TAB: MULTILOTERÍAS ════════════ -->
+        <section class="tab-panel" id="tab-multiloterias">
+            <div class="topbar">
+                <h1>🔀 Patrones Multiloterías</h1>
+            </div>
+            <div class="card">
+                <div class="controls-row">
+                    <div class="ctrl-group"><label>Lotería Ref.</label>
+                        <select id="ml_lot">{% for l in loterias %}<option>{{ l }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="ctrl-group"><label>Fecha Ref.</label>
+                        <input type="date" id="ml_ref" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>Hist. Ini</label>
+                        <input type="date" id="ml_fi" value="{{ now_minus_90.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>Hist. Fin</label>
+                        <input type="date" id="ml_ff" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>% Min</label>
+                        <input type="number" id="ml_sim" value="30" min="0" max="100" style="width:70px">
+                    </div>
+                    <button class="btn btn-primary" onclick="buscarMultiloterias()">🔍 Buscar Patrones</button>
+                </div>
+                <div
+                    style="padding:10px 20px;display:flex;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--card-border)">
+                    {% for l in loterias %}
+                    <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+                        <input type="checkbox" class="ml-check" value="{{ l }}" checked> {{ l }}
+                    </label>{% endfor %}
+                </div>
+                <div class="flex-gap" style="padding:16px;gap:12px">
+                    <div style="flex:2">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Patrones Multilotería</div>
+                        <div class="table-wrap" style="max-height:55vh">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>🎰 Lotería</th>
+                                        <th>📅 Fecha</th>
+                                        <th>%</th>
+                                        <th>✅</th>
+                                        <th>Tot</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyML" class="clickable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div style="flex:1;min-width:220px">
+                        <div
+                            style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                            Comparativa</div>
+                        <div class="table-wrap" style="max-height:55vh">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>⏰</th>
+                                        <th>Ref</th>
+                                        <th>Comp</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyMLDet"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="status-bar" id="statusML" style="margin:0 16px 16px">Listo.</div>
+            </div>
+        </section>
+
+        <!-- ════════════ TAB: FRECUENCIAS ════════════ -->
+        <section class="tab-panel" id="tab-frecuencias">
+            <div class="topbar">
+                <h1>📈 Frecuencias Animales</h1>
+            </div>
+            <div class="flex-gap">
+                <div class="panel-sidebar">
+                    <div class="card">
+                        <div class="card-header">🎯 Filtros</div>
+                        <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+                            <div class="ctrl-group"><label>Lotería</label>
+                                <select id="f_lot">{% for l in loterias %}<option>{{ l }}</option>{% endfor %}</select>
+                            </div>
+                            <div class="ctrl-group"><label>Tipo</label>
+                                <select id="f_tipo">
+                                    <option value="despues">DESPUÉS</option>
+                                    <option value="antes">ANTES</option>
+                                </select>
+                            </div>
+                            <div class="ctrl-group"><label>Inicio</label>
+                                <input type="date" id="f_fi" value="{{ now_minus_30.strftime('%Y-%m-%d') }}">
+                            </div>
+                            <div class="ctrl-group"><label>Fin</label>
+                                <input type="date" id="f_ff" value="{{ now.strftime('%Y-%m-%d') }}">
+                            </div>
+                            <div class="ctrl-group"><label>Top N (max 10)</label>
+                                <input type="number" id="f_top" value="10" min="1" max="10" style="width:80px">
+                            </div>
+                            <button class="btn btn-primary" onclick="analizarFrecuencias()">🔍 Analizar</button>
+                        </div>
+                        <div class="status-bar" id="statusFrec" style="margin:8px 16px 16px">Listo.</div>
+                    </div>
+                </div>
+                <div class="panel-main">
+                    <div class="card" style="height:100%">
+                        <div class="card-header">📊 Dashboard de Frecuencias (TOP 10)</div>
+                        <div class="frec-table-wrap card-body" style="padding:12px">
+                            <table class="frec-table" id="tblFrec">
+                                <thead id="tblFrecHead"></thead>
+                                <tbody id="tblFrecBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════ TAB: MULTIPRONÓSTICOS ════════════ -->
+        <section class="tab-panel" id="tab-multipronosticos">
+            <div class="topbar">
+                <h1>🎯 Multipronósticos</h1>
+            </div>
+            <div class="card">
+                <div class="controls-row">
+                    <div class="ctrl-group"><label>Lotería</label>
+                        <select id="mp_lot">{% for l in loterias %}<option>{{ l }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="ctrl-group"><label>Fecha Ref.</label>
+                        <input type="date" id="mp_ref" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>Hist. Ini</label>
+                        <input type="date" id="mp_fi" value="{{ now_minus_90.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>Hist. Fin</label>
+                        <input type="date" id="mp_ff" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <button class="btn btn-success" onclick="generarMultipronosticos()">🚀 Generar
+                        Multipronósticos</button>
+                </div>
+                <div style="padding:16px">
+                    <div
+                        style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px">
+                        Ranking de Pronósticos Fuertes</div>
+                    <div class="table-wrap" style="max-height:60vh">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Cód</th>
+                                    <th>🐾 Animalito</th>
+                                    <th>⭐ Total</th>
+                                    <th>Fuentes</th>
+                                    <th>Detalles</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bodyMP"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="status-bar" id="statusMP" style="margin:0 16px 16px">Listo.</div>
+            </div>
+        </section>
+
+        <!-- ════════════ TAB: COINCIDENCIAS ════════════ -->
+        <section class="tab-panel" id="tab-coincidencias">
+            <div class="topbar">
+                <h1>🔍 Coincidencias Consecutivas</h1>
+            </div>
+            <div class="flex-gap">
+                <div class="panel-sidebar">
+                    <div class="card">
+                        <div class="card-header">🔍 Configuración</div>
+                        <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+                            <div class="ctrl-group"><label>Lotería</label>
+                                <select id="c_lot">{% for l in loterias %}<option>{{ l }}</option>{% endfor %}</select>
+                            </div>
+                            <div class="ctrl-group"><label>Animal 1</label>
+                                <select id="c_a1">
+                                    {% for k,v in animalitos.items() %}<option value="{{ k }}">{{ k }} - {{ v }}
+                                    </option>{% endfor %}
+                                </select>
+                            </div>
+                            <div class="ctrl-group"><label>Animal 2</label>
+                                <select id="c_a2">
+                                    {% for k,v in animalitos.items() %}<option value="{{ k }}" {% if loop.index==2
+                                        %}selected{% endif %}>{{ k }} - {{ v }}</option>{% endfor %}
+                                </select>
+                            </div>
+                            <div class="ctrl-group"><label>Inicio</label>
+                                <input type="date" id="c_fi" value="{{ now_minus_30.strftime('%Y-%m-%d') }}">
+                            </div>
+                            <div class="ctrl-group"><label>Fin</label>
+                                <input type="date" id="c_ff" value="{{ now.strftime('%Y-%m-%d') }}">
+                            </div>
+                            <button class="btn btn-primary" onclick="buscarCoincidencias()">🔍 Buscar</button>
+                        </div>
+                        <div class="status-bar" id="statusCoinc" style="margin:8px 16px 16px">Listo.</div>
+                    </div>
+                </div>
+                <div class="panel-main">
+                    <div class="grid-2" style="height:100%">
+                        <div class="card">
+                            <div class="card-header">📈 Fechas Encontradas</div>
+                            <div class="table-wrap card-body" style="max-height:55vh;padding:0">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>📅 Fecha</th>
+                                            <th>⏰ H1</th>
+                                            <th>⏰ H2</th>
+                                            <th>#</th>
+                                            <th>Tot</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bodyCoincFechas" class="clickable"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">📋 Resultados del Día</div>
+                            <div class="table-wrap card-body" style="max-height:55vh;padding:0">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>⏰</th>
+                                            <th>Cód</th>
+                                            <th>🐾</th>
+                                            <th>Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bodyCoincDia"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════ TAB: CONFIGURACIÓN ════════════ -->
+        <section class="tab-panel" id="tab-configuracion">
+            <div class="topbar">
+                <h1>⚙️ Configuración</h1>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header">🛠️ Gestión de Base de Datos</div>
+                    <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+                        <button class="btn btn-primary" onclick="mostrarEstadisticas()">📊 Estadísticas BD</button>
+                        <button class="btn btn-warning" onclick="verificarDuplicados()">🔍 Verificar Duplicados</button>
+                        <button class="btn btn-danger" onclick="eliminarDuplicados()">🗑️ Eliminar Duplicados</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">ℹ️ Sistema</div>
+                    <div class="card-body">
+                        <div id="infoEstadisticas">
+                            <div class="stats-grid" id="statsGrid"></div>
+                        </div>
+                        <div style="margin-top:16px;font-size:12px;color:var(--text-muted);line-height:1.7">
+                            <strong style="color:var(--text)">🚀 MÓDULOS ACTIVOS</strong><br>
+                            📊 RESULTADOS – Auditoría de datos históricos<br>
+                            🔄 PATRONES – Búsqueda de similitudes vectoriales<br>
+                            🐾 ANIMALES – Patrones basados en animales<br>
+                            🔀 MULTILOTERÍAS – Comparativa cruzada normalizada<br>
+                            📈 FRECUENCIAS – Mapa estadístico de tendencias<br>
+                            🎯 MULTIPRONÓSTICOS – Algoritmo de puntuación integrada<br>
+                            🔍 COINCIDENCIAS – Pares consecutivos históricos
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main><!-- /main -->
+
+    <!-- ══ MODAL: SCRAPING HISTÓRICO ══════════════════════ -->
+    <div id="modalScraping"
+        style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;align-items:center;justify-content:center">
+        <div class="card" style="width:500px;max-width:95vw">
+            <div class="card-header">
+                📥 Scraping Histórico
+                <button class="btn btn-ghost btn-sm" onclick="hideModal('modalScraping')">✕</button>
+            </div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+                <div class="grid-2">
+                    <div class="ctrl-group"><label>Inicio</label>
+                        <input type="date" id="sc_fi" value="{{ now_minus_7.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="ctrl-group"><label>Fin</label>
+                        <input type="date" id="sc_ff" value="{{ now.strftime('%Y-%m-%d') }}">
+                    </div>
+                </div>
+                <div>
+                    <div
+                        style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">
+                        Loterías</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px">
+                        {% for l in loterias %}
+                        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+                            <input type="checkbox" class="sc-check" value="{{ l }}" checked> {{ l }}
+                        </label>{% endfor %}
+                    </div>
+                </div>
+                <div class="status-bar" id="statusScraping">Listo para iniciar.</div>
+                <button class="btn btn-success" onclick="iniciarScraping()">🚀 Iniciar Scraping</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ TOAST ════════════════════════════════════════ -->
+    <div id="toast"></div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+
+</html>
