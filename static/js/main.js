@@ -6,8 +6,7 @@ const localToIso = local => local ? local.split('/').reverse().join('-') : '';
 const dateInputToLocal = v => v ? v.split('-').reverse().join('/') : '';
 const localToDateInput = v => v ? v.split('/').reverse().join('-') : '';
 
-const ANIMALITOS = {{ animalitos | tojson }};
-const LOTERIAS = {{ loterias | tojson }};
+
 
 function showToast(msg, type = 'info') {
     const t = $('toast');
