@@ -99,14 +99,47 @@ function exportarCSV() {
 async function iniciarScraping() {
     const fi = dateInputToLocal($('sc_fi').value);
     const ff = dateInputToLocal($('sc_ff').value);
-    const loterias = [...document.querySelectorAll('.sc-check:checked')].map(c => c.value);
-    if (!loterias.length) { showToast('Selecciona al menos una lotería', 'error'); return; }
-    setStatus('statusScraping', 'Iniciando scraping... (puede tardar varios minutos)');
+    const lots = [...document.querySelectorAll('.sc-check:checked')].map(c => c.value);
+    if (!fi || !ff) { showToast('Faltan fechas', 'error'); return; }
+
+    setStatus('statusScraping', 'Solicitando inicio...');
     try {
-        const data = await postApi('/api/scraping', { fecha_inicio: fi, fecha_fin: ff, loterias });
-        setStatus('statusScraping', data.error ? 'Error: ' + data.error : `Completado. ${data.total_resultados} resultados cargados.`);
-        if (!data.error) { showToast('Scraping completado', 'success'); cargarResultados(); }
-    } catch (e) { setStatus('statusScraping', 'Error: ' + e.message); showToast('Error en scraping', 'error'); }
+        const data = await postApi('/api/scraping', { fecha_inicio: fi, fecha_fin: ff, loterias: lots });
+        if (data.error) { setStatus('statusScraping', 'Error: ' + data.error); return; }
+
+        showToast('Scraping iniciado en segundo plano', 'info');
+        pollScrapingStatus();
+    } catch (e) { setStatus('statusScraping', 'Error: ' + e.message); }
+}
+
+function pollScrapingStatus() {
+    if (window._scrapingInterval) clearInterval(window._scrapingInterval);
+
+    window._scrapingInterval = setInterval(async () => {
+        try {
+            const data = await fetchApi('/api/scraping/status');
+            if (data.error) {
+                setStatus('statusScraping', 'Error histórico: ' + data.error);
+                clearInterval(window._scrapingInterval);
+                return;
+            }
+
+            setStatus('statusScraping', `[${data.progreso}]`);
+
+            if (data.finalizado) {
+                setStatus('statusScraping', `✅ Completado: ${data.total} nuevos registros.`);
+                clearInterval(window._scrapingInterval);
+                cargarResultados();
+                mostrarEstadisticas();
+                showToast('Scraping finalizado con éxito', 'success');
+            } else if (!data.activo && !data.finalizado && data.error) {
+                setStatus('statusScraping', '❌ Falló: ' + data.error);
+                clearInterval(window._scrapingInterval);
+            }
+        } catch (e) {
+            console.error('Polling error:', e);
+        }
+    }, 2000);
 }
 
 /* ─── Auto-scraping toggle ─── */
