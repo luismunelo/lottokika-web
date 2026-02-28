@@ -22,10 +22,19 @@ from core import (
 
 app = Flask(__name__)
 
-# ─── Auto-scraping state ──────────────────────────────────────────────────────
+# ─── Scraping state ──────────────────────────────────────────────────────────
 auto_scraping_activo = False
 ultima_actualizacion = "Nunca"
 hilo_scraping = None
+
+# For manual historical scraping
+scraping_estado = {
+    "activo": False,
+    "progreso": "Listo",
+    "total": 0,
+    "error": None,
+    "finalizado": False
+}
 
 def _loop_auto_scraping():
     global ultima_actualizacion
@@ -73,6 +82,10 @@ def api_estadisticas():
 # ─── API: Scraping ────────────────────────────────────────────────────────────
 @app.route('/api/scraping', methods=['POST'])
 def api_scraping():
+    global scraping_estado
+    if scraping_estado["activo"]:
+        return jsonify({'error': 'Ya hay un scraping en curso'}), 400
+
     body = request.json or {}
     fi = body.get('fecha_inicio')
     ff = body.get('fecha_fin')
@@ -84,8 +97,39 @@ def api_scraping():
         fecha_f = datetime.strptime(ff, '%d/%m/%Y')
     except ValueError:
         return jsonify({'error': 'Formato de fecha inválido. Use DD/MM/YYYY'}), 400
-    result = scraping_historico(fecha_i, fecha_f, lots)
-    return jsonify(result)
+
+    # Iniciar en segundo plano
+    scraping_estado = {
+        "activo": True,
+        "progreso": "Iniciando...",
+        "total": 0,
+        "error": None,
+        "finalizado": False
+    }
+
+    def run_background_scraping(f_i, f_f, lts):
+        global scraping_estado
+        try:
+            def cb(msg):
+                scraping_estado["progreso"] = msg
+
+            result = scraping_historico(f_i, f_f, lts, progress_callback=cb)
+            scraping_estado["total"] = result.get('total_resultados', 0)
+            scraping_estado["finalizado"] = True
+        except Exception as e:
+            scraping_estado["error"] = str(e)
+        finally:
+            scraping_estado["activo"] = False
+
+    thread = threading.Thread(target=run_background_scraping, args=(fecha_i, fecha_f, lots))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({"success": True, "message": "Scraping iniciado en segundo plano"})
+
+@app.route('/api/scraping/status')
+def api_scraping_status():
+    return jsonify(scraping_estado)
 
 @app.route('/api/auto-scraping', methods=['POST'])
 def api_toggle_auto_scraping():
